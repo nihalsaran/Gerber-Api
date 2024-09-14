@@ -1,0 +1,59 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerber File Converter</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        h1 { color: #333; }
+        #result { margin-top: 20px; font-weight: bold; }
+        #images { margin-top: 20px; }
+        img { max-width: 100%; margin-top: 10px; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <h1>Gerber File Converter</h1>
+    <input type="file" id="gerberFile" accept=".zip">
+    <button onclick="convertGerber()">Convert</button>
+    <div id="result"></div>
+    <div id="images"></div>
+
+    <script>
+        async function convertGerber() {
+            const fileInput = document.getElementById('gerberFile');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a file');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await axios.post('/convert-gerber/', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data'
+                    }
+                });
+
+                document.getElementById('result').innerHTML = response.data.message;
+                const imagesDiv = document.getElementById('images');
+                imagesDiv.innerHTML = '';
+                response.data.available_images.forEach(imageName => {
+                    const img = document.createElement('img');
+                    img.src = `/images/${imageName}`;
+                    img.alt = imageName;
+                    imagesDiv.appendChild(img);
+                });
+            } catch (error) {
+                document.getElementById('result').innerHTML = `Error: ${error.response.data.detail}`;
+            }
+        }
+    </script>
+</body>
+</html>
+    

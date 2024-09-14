@@ -1,0 +1,4 @@
+[console_scripts]
+pygerber=pygerber.__main__:main
+pygerber_language_server=pygerber.gerberx3.language_server.__main__:main
+
