@@ -1,17 +1,22 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi.responses import JSONResponse, FileResponse
 import os
 import zipfile
 from io import BytesIO
 from pygerber.gerberx3.api.v2 import GerberFile, Project
 import tempfile
-import shutil
 from PIL import Image
+import uuid
+import time
 
 app = FastAPI()
 
-# Constants
+# Constant for dots per millimeter
 DPMM = 40
+
+# Temporary storage directory
+TEMP_DIR = "/tmp/gerber_images"
+os.makedirs(TEMP_DIR, exist_ok=True)
 
 def pixels_to_mm(pixels):
     return round(pixels / DPMM)
@@ -48,12 +53,19 @@ def process_gerber_files(zip_file):
 
     return top_project, bottom_project
 
-@app.post("/api/convert-gerber/")
-async def convert_gerber(file: UploadFile = File(...)):
+def cleanup_old_files():
+    current_time = time.time()
+    for filename in os.listdir(TEMP_DIR):
+        file_path = os.path.join(TEMP_DIR, filename)
+        if os.path.isfile(file_path):
+            if os.stat(file_path).st_mtime < current_time - 3600:  # 1 hour old
+                os.remove(file_path)
+
+@app.post("/api/convert-gerber")
+async def convert_gerber(file: UploadFile = File(...), background_tasks: BackgroundTasks):
     if not file.filename.endswith('.zip'):
         raise HTTPException(status_code=400, detail="Uploaded file must be a ZIP file")
 
-    # Create a temporary directory
     with tempfile.TemporaryDirectory() as temp_dir:
         try:
             # Read the uploaded ZIP file
@@ -64,8 +76,9 @@ async def convert_gerber(file: UploadFile = File(...)):
             top_project, bottom_project = process_gerber_files(zip_file)
 
             # Generate output file paths
-            output_top = os.path.join(temp_dir, "output_top.png")
-            output_bottom = os.path.join(temp_dir, "output_bottom.png")
+            unique_id = str(uuid.uuid4())
+            output_top = os.path.join(TEMP_DIR, f"output_top_{unique_id}.png")
+            output_bottom = os.path.join(TEMP_DIR, f"output_bottom_{unique_id}.png")
 
             # Render the top and bottom layers
             if top_project:
@@ -87,7 +100,8 @@ async def convert_gerber(file: UploadFile = File(...)):
                         available_images.append({
                             "name": os.path.basename(output_file),
                             "width": width_mm,
-                            "height": height_mm
+                            "height": height_mm,
+                            "url": f"/api/images/{os.path.basename(output_file)}"
                         })
                         total_width_mm += width_mm
                         total_height_mm += height_mm
@@ -96,6 +110,9 @@ async def convert_gerber(file: UploadFile = File(...)):
             # Calculate average dimensions
             avg_width_mm = round(total_width_mm / image_count) if image_count > 0 else 0
             avg_height_mm = round(total_height_mm / image_count) if image_count > 0 else 0
+
+            # Schedule cleanup task
+            background_tasks.add_task(cleanup_old_files)
 
             return JSONResponse(content={
                 "message": "Gerber files processed successfully",
@@ -111,6 +128,28 @@ async def convert_gerber(file: UploadFile = File(...)):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
-# Remove the image serving and listing endpoints as they won't work in a serverless environment
+@app.get("/api/images/{image_name}")
+async def get_image(image_name: str, background_tasks: BackgroundTasks):
+    image_path = os.path.join(TEMP_DIR, image_name)
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    # Schedule cleanup task
+    background_tasks.add_task(cleanup_old_files)
+    
+    return FileResponse(image_path, media_type="image/png", filename=image_name)
 
-# Remove the cleanup function as it's not needed in a serverless environment
+@app.get("/api/list-images")
+async def list_images(background_tasks: BackgroundTasks):
+    images = []
+    for filename in os.listdir(TEMP_DIR):
+        if filename.endswith('.png'):
+            images.append({
+                "name": filename,
+                "url": f"/api/images/{filename}"
+            })
+    
+    # Schedule cleanup task
+    background_tasks.add_task(cleanup_old_files)
+    
+    return JSONResponse(content={"available_images": images})
