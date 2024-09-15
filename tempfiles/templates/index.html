@@ -9,8 +9,9 @@
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
         h1 { color: #333; }
-        #result { margin-top: 20px; font-weight: bold; }
+        #result, #avgDimensions { margin-top: 20px; font-weight: bold; }
         #images { margin-top: 20px; }
+        .image-container { margin-bottom: 20px; }
         img { max-width: 100%; margin-top: 10px; border: 1px solid #ddd; }
     </style>
 </head>
@@ -19,6 +20,7 @@
     <input type="file" id="gerberFile" accept=".zip">
     <button onclick="convertGerber()">Convert</button>
     <div id="result"></div>
+    <div id="avgDimensions"></div>
     <div id="images"></div>
 
     <script>
@@ -41,13 +43,24 @@
                 });
 
                 document.getElementById('result').innerHTML = response.data.message;
+                document.getElementById('avgDimensions').innerHTML = `Average Dimensions: Width: ${response.data.average_dimensions.width}mm, Height: ${response.data.average_dimensions.height}mm`;
+                
                 const imagesDiv = document.getElementById('images');
                 imagesDiv.innerHTML = '';
-                response.data.available_images.forEach(imageName => {
+                response.data.available_images.forEach(image => {
+                    const container = document.createElement('div');
+                    container.className = 'image-container';
+                    
                     const img = document.createElement('img');
-                    img.src = `/images/${imageName}`;
-                    img.alt = imageName;
-                    imagesDiv.appendChild(img);
+                    img.src = `/images/${image.name}`;
+                    img.alt = image.name;
+                    
+                    const info = document.createElement('p');
+                    info.textContent = `${image.name} - Width: ${image.width}mm, Height: ${image.height}mm`;
+                    
+                    container.appendChild(img);
+                    container.appendChild(info);
+                    imagesDiv.appendChild(container);
                 });
             } catch (error) {
                 document.getElementById('result').innerHTML = `Error: ${error.response.data.detail}`;
